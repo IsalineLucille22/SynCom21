@@ -1,0 +1,399 @@
+%Script made by Adline Vouillamoz and Isaline Guex. Metropolis-Hasting
+%algorithm to uniquely fit the CF matrix. The initial matrices are
+%estimated with the Metropolis-Hasting script
+%MH_Algorithm_CF_Death_PARFOR.m then the interactions for resources
+%consumption and self-inhibition are kept constant.
+clear;
+close all;
+clc;
+
+%Save or Not
+save_data = 1; %1 if save, 0 otherwise
+% Create a structure or cell array to hold the data
+data_to_save_Inter_v2 = struct();
+Name_file = 'data_to_save.mat';
+load(strcat('Data/', Name_file));
+parfor nb_iter_tot = 1:10     
+% for nb_iter_tot = 1:1
+   
+    %Loadind data
+    Parameters_set = readtable(strcat('Data/','MergedData.xlsx'), 'Sheet', 8,'Range','25:46', 'Format','auto');
+    Parameters_Senka_mu_max = readtable(strcat('Data/','MergedData.xlsx'), 'Sheet', 9, 'Range','71:91', 'Format','auto');
+    Parameters_Senka_Lag_time = readtable(strcat('Data/','MergedData.xlsx'), 'Sheet', 9, 'Range','94:114', 'Format','auto');
+    Data_Evol = readtable(strcat('Data/','S20_S21_abs_abund_cfu_Senka.xlsx'), 'Sheet', 4, 'Range','1:21', 'Format','auto');%readtable(strcat('Data/','MergedData.xlsx'), 'Sheet', 4, 'Range','1:21', 'Format','auto');%
+    Data_Evol_test = readtable(strcat('Data/','S20_S21_abs_abund_cfu_Senka.xlsx'), 'Sheet', 3, 'Range','1:21', 'Format','auto'); %Test with the new SynCom 20
+    Time_step = [0 1 3 7 10 15 21 22]*24; %[0 1 3 7 10 15 21 22]*24; %[0 1 3 7 10 15 21 22]*24; %Measured time step in hours
+    tspan = [0, max(Time_step)]; %Time interval in hours
+    S = height(Data_Evol);
+    
+    %Turn 7 into 5
+    yield_vect = table2array(Parameters_set(1:S,7)); %Change it according to the desired mu_max
+    name = string(table2array(Parameters_set(1:S,1)));%string(table2array(table(2:22,3)));
+    
+    mu_max_dist = table2array(Parameters_Senka_mu_max(:,7:8)); %Normal Parameters_Senka_mu_max(:,2:3). Log-normal Parameters_Senka_mu_max(:,7:8)
+    mu_max_vect = mu_max_dist(:,1);
+    Res_Percentage = table2array(Parameters_Senka_mu_max(:,12)); %table2array(Parameters_Senka_mu_max(:,4)); %Percentage of resources that can be consumed
+    Parameters_Senka_Lag_time = table2array(Parameters_Senka_Lag_time(:,7:8)); %table2array(Parameters_Senka_Lag_time(:,2:3));
+    mean_param_LN = mu_max_dist(:,1);
+    var_param_LN = mu_max_dist(:,2);
+    
+    Data_Evol_temp = table2array(Data_Evol(:, 2:end));
+    Data_Evol_temp = Data_Evol_temp(:,~ismember(mod(1:length(Data_Evol_temp(1,:)), 8),[1, 2, 3]));%Data_Evol_temp(:,mod(1:length(Data_Evol_temp(1,:)),4) ~= 0);%80% of the data to train. Hold-out method.
+    nb_obs = length(Data_Evol_temp(1,:));
+    nb_time_step = length(Time_step);
+    nb_rep = nb_obs/nb_time_step;
+    Measured_Abund = zeros(length(mu_max_vect), nb_time_step, nb_rep); %Number species, number times, number replicates.
+    for i = 1:nb_rep
+        Measured_Abund(:,:,i) = Data_Evol_temp(:, mod(1:nb_obs, nb_rep) == (i - 1));
+    end
+    
+    mean_y_0 = mean(Measured_Abund(:,1,:), 3);%table2array(Data_Evol(1:20, 2));
+    std_y_0 = std(Measured_Abund(:,1,:), 1, 3);
+    StackPlot_Meas = Measured_Abund./sum(Measured_Abund);
+
+
+    %Load parameters
+    data_to_save = data_to_save_4;
+    ind_sim = 3; %3, 5, (7), 9, (10), 11, 13, (15), (17), 18
+    kappa_mat = data_to_save(ind_sim).kappa_mat;
+    Resource_Matrix = data_to_save(ind_sim).Resource_Matrix;
+    Pred_Mat = data_to_save(ind_sim).Death_Mat_Temp; 
+    Threshold_CF = data_to_save(ind_sim).Threshold_CF;
+    Threshold_death = data_to_save(ind_sim).Threshold_death;
+    Lag_time_Cons = data_to_save(ind_sim).Lag_time_Cons; 
+    Lag_time_Pred = data_to_save(ind_sim).Lag_time_Pred;
+    R = data_to_save(ind_sim).R;
+    nb_Res = length(R); %Number of resources (group of resources)
+    death_rate =  data_to_save(ind_sim).death_rate;
+    name = string(table2array(Parameters_set(1:20,1)));
+    Var_Resource_Matrix = lognrnd(zeros(S,nb_Res), 0*repmat(mu_max_dist(:,2), 1, nb_Res), S, nb_Res);
+    Resource_Matrix = Resource_Matrix.*Var_Resource_Matrix;
+    
+    liste_nrj_tot_temp = 1e15;
+    %Initialization of the model parameters fixed for all replicates 
+    t_0 = 0; %Time 0
+    CrossFeed_Mat = lognrnd((log(0.8) + mu_max_dist(:,1)).*ones(S,S), 0*mu_max_dist(:,2).*ones(S,S));%.val val% of zeros. ConsumerxProducer
+    Death_Mat = lognrnd((log(0.001) + mean(mu_max_dist(:,1))).*ones(S,S), 0*mu_max_dist(:,2).*ones(S,S));%PredatorsxPreys %Rates matrix does not depend on mu_max.
+    Lag_time_Pred_init = Lag_time_Pred;
+    CrossFeed_Mat_Temp = zeros(S,S); %Temporal predation matrix
+    rand_indice = rand(S,S) > 0.8; %Percentage of zeros. Larger is the value smaller is the number of interaction
+    CrossFeed_Mat_Temp(rand_indice) = CrossFeed_Mat(rand_indice); %Put some element to 0
+    Death_Mat_Temp = zeros(S,S);
+    Death_Mat_Temp(1:1+size(Death_Mat_Temp,1):end) = death_rate;
+    death_rate = max(death_rate, 7e-05);
+    CrossFeed_Mat_Temp(1:1+size(CrossFeed_Mat_Temp,1):end) = 0;    
+    
+    %Setting for Matlab ODE solver
+    opts_1 = odeset('RelTol',1e-9,'AbsTol',1e-9);%,'NonNegative',1:nb_tot_Species); %To smooth the curves obtained using ode45.
+    
+    %Initialization of the colors
+    
+    colors = distinguishable_colors(S);
+    
+    num_fig = 1;
+    %Initial concentrations using a normal distribution
+    mat_y_0 = mean_y_0;
+    mat_y_0 = [mat_y_0 zeros(S,1) zeros(S,1)];
+    
+    %Fit one unique threshold value
+    mat_y_0 = reshape(mat_y_0', 1, []);
+    mat_y_0 = [mat_y_0 R];
+    mu_max_vect_temp = exp(mu_max_vect + mu_max_dist(:,2).^2./2);
+    kappa_mat_init = kappa_mat; 
+    Mat_kappa_3_tot = repmat(kappa_mat(:,3), 1, S);
+    Mat_kappa_3 = Mat_kappa_3_tot;
+    Mat_kappa_3(CrossFeed_Mat_Temp == 0) = 0;Mat_kappa_3_init = Mat_kappa_3;
+        
+    beta = 0.5*1e2; 
+    num_steps = 100;%500;
+    nb_loops = 1; %Number of different loops (CF, predation. resource, nb of resources)
+         
+    n = 1; r = 1; l = 1; p = 1; u = 1; %Total energy
+    max_tot_iter = 10;%15;%13;%18;%
+    liste_nrj_CF = zeros(1, num_steps*max_tot_iter);
+    Struct_CrossFeed_Mat = cell(num_steps*max_tot_iter, 1); %Creation d'une structure pour sauver les matrices générées
+    Struct_CrossFeed_Mat{1} = CrossFeed_Mat_Temp; CrossFeed_Mat_init = CrossFeed_Mat_Temp;
+    CrossFeed_Mat_Temp_cand = CrossFeed_Mat_Temp; %Initilization candidat
+    Threshold_CF_cand = Threshold_CF; Threshold_CF_init = Threshold_CF;
+    acceptance_ratio_CF = zeros(1, num_steps*max_tot_iter);
+    liste_nrj_pred = zeros(1, num_steps*max_tot_iter);
+    Struct_Death_Mat = cell(num_steps*max_tot_iter, 1); %Creation d'une structure pour sauver les matrices générées
+    Struct_Death_Mat{1} = Death_Mat_Temp; Death_Mat_init = Death_Mat_Temp;
+    Death_Mat_Temp_cand = Death_Mat_Temp; %Initilization candidat
+    Threshold_death_cand = Threshold_death; Threshold_death_init = Threshold_death_cand;
+    acceptance_ratio_pred = zeros(1, num_steps*max_tot_iter);
+    liste_nrj_res = zeros(1, num_steps*max_tot_iter);
+    Struct_Res_Mat = cell(num_steps*max_tot_iter, 1); %Creation d'une structure pour sauver les matrices générées
+    Struct_Res_Mat{1} = Resource_Matrix; Resource_Matrix_init = Resource_Matrix;
+    Resource_Matrix_cand = Resource_Matrix; %Initilization candidat
+    acceptance_ratio_res = zeros(1, num_steps*max_tot_iter);
+    liste_nrj_tot = zeros(1, nb_loops*num_steps*max_tot_iter);
+    acceptance_ratio_tot = zeros(1, nb_loops*num_steps*max_tot_iter);
+    nb_Res_new = nb_Res;
+    Lag_time_Cons_cand = Lag_time_Cons; Lag_time_Cons_init = Lag_time_Cons;
+    R_new = R; R_init = R; mat_y_0_new = mat_y_0; 
+    liste_nrj_nb_res = zeros(1, num_steps*max_tot_iter);
+    acceptance_ratio_nb_res = zeros(1, num_steps*max_tot_iter);
+    Evol_nb_Res = zeros(1, num_steps*max_tot_iter);
+    
+    var_theta = 0.1;
+    acceptance_ratio_temp = 10000;
+    ratio_increase_loop = 1;
+    N = nb_loops*num_steps*max_tot_iter*round(ratio_increase_loop^max_tot_iter);
+    max_val = [10./mu_max_vect_temp 10*ones(S,1) 10./mu_max_vect_temp];
+    Hill_CF_coeff = 10; Hill_Pred_coeff = 10;
+    Hill_CF_coeff_cand = Hill_CF_coeff; Hill_Pred_coeff_cand = Hill_Pred_coeff;
+    delta_dist = 1;
+    theta_res = var_theta*mean(mu_max_dist(:,2));
+    delta_dist_vect = [];
+    LT_CF_Death = zeros(S, S);
+    Cov_Lt_eye = eye(S*S);
+    Weight_species =  ones(S,8);
+    weight_day_seven = 1;
+    CF_Trace_Plot = []; Death_Trace_Plot = []; Res_Trace_Plot = [];
+    Cov_Mat_CF = 0.01*eye(S*S); Cov_Mat_Death = eye(S); Cov_Mat_Res = 0.01*eye(S*nb_Res); Cov_Mat_LT = 0.01*eye(S*nb_Res);
+    lag = 5;
+    while p < N 
+    
+        %%%%%%%%%% Cross-feeding loop %%%%%%%% 
+    
+        theta_T = 0.01*var_theta*mean(Threshold_CF)*eye(S); 
+        Mat_kappa_3 = kappa_mat(:,3).*CrossFeed_Mat_Temp_cand./mu_max_vect_temp;
+        Cov_Mat = 0.1*eye(S*S);
+        W_n_Cov_Mat = normrnd(zeros(S*S,1), ones(S*S,1)); W_n_LT = normrnd(zeros(S*S,1), ones(S*S,1)); W_n_thresh = normrnd(zeros(S,1), ones(S,1));  
+        accept_temp = zeros(1, num_steps);
+        Temp = 500;
+        for k = 1:num_steps
+
+            for j = 1:lag
+                sol = ode45(@(t, y) fun_CF_Death(t, y, kappa_mat, CrossFeed_Mat_Temp_cand, Mat_kappa_3, Resource_Matrix, Threshold_CF, Threshold_death, Death_Mat_Temp, death_rate, S, Lag_time_Cons, Lag_time_Pred, nb_Res, Hill_CF_coeff_cand, Hill_Pred_coeff), tspan,  mat_y_0, opts_1); %Multiple resource groups
+                z_temp = deval(sol, Time_step);
+                X = z_temp(mod(1:S*3,3) == 1,:); %Species'biomass
+                P = z_temp(mod(1:S*3,3) == 2,:); %Complexes'biomass
+                X = X + P;
+                nu = k^(-3/4);
+                StackPlotTot = X./sum(X);
+    
+                CrossFeed_Mat_Temp = CrossFeed_Mat_Temp./(mu_max_vect_temp);
+                CrossFeed_Mat_Temp_cand = CrossFeed_Mat_Temp_cand./(mu_max_vect_temp);
+        
+                [accept_temp, W_n_LT, W_n_thresh, W_n_Cov_Mat, CrossFeed_Mat_Temp_cand, CrossFeed_Mat_Temp, Threshold_CF_cand, Threshold_CF, Struct_CrossFeed_Mat, liste_nrj_tot, liste_nrj_CF, acceptance_ratio_tot, acceptance_ratio_CF, p, n, theta_T, nu, Cov_Mat] = ...
+                    fun_MH_Candidate_Rob(accept_temp, k, W_n_LT, W_n_thresh, W_n_Cov_Mat, CrossFeed_Mat_Temp_cand, CrossFeed_Mat_Temp, Threshold_CF_cand, Threshold_CF, Struct_CrossFeed_Mat, p, n, liste_nrj_tot, liste_nrj_CF,...
+                    acceptance_ratio_tot, acceptance_ratio_CF, S, S, X, Measured_Abund, StackPlotTot, StackPlot_Meas, beta, theta_T, nu, Cov_Mat, Cov_Lt_eye, max_val(:,1), nb_rep, LT_CF_Death, LT_CF_Death, Weight_species, weight_day_seven, Temp);
+        
+                CF_Trace_Plot(:, :, n) = CrossFeed_Mat_Temp;  
+        
+                CrossFeed_Mat_Temp_cand(1:1+size(CrossFeed_Mat_Temp_cand,1):end) = 0;
+                CrossFeed_Mat_Temp_cand(CrossFeed_Mat_Temp_cand < 1e-06) = 0;
+        
+                CrossFeed_Mat_Temp = CrossFeed_Mat_Temp.*(mu_max_vect_temp);
+                CrossFeed_Mat_Temp_cand = CrossFeed_Mat_Temp_cand.*(mu_max_vect_temp);
+                Mat_kappa_3 = kappa_mat(:,3).*CrossFeed_Mat_Temp_cand./mu_max_vect_temp;
+            end
+            Temp = Temp*0.99;
+
+            Struct_CrossFeed_Mat{n + 1} = CrossFeed_Mat_Temp;
+            n = n + 1;
+            p = p + 1;
+        
+    
+            if mod(p, num_steps) == 0
+                disp(strcat("Iteration ", num2str(p), "/", num2str(N)))
+            end          
+        end
+        sum(accept_temp)/num_steps
+        Cov_Mat_CF = Cov_Mat;
+   
+        acceptance_ratio_temp = sum(acceptance_ratio_tot)/p;
+        liste_nrj_tot_temp = liste_nrj_tot(p - 1);
+        delta_dist = 1;
+        num_steps = round(ratio_increase_loop*num_steps);
+        weight_day_seven = ratio_increase_loop*weight_day_seven;
+        ratio_obs_sim = 1 - abs(X - mean(Measured_Abund,3))./(abs(X) + abs(mean(Measured_Abund,3))); %Similaritiy intex used as weights for variances
+        Weight_species = mean(ratio_obs_sim, 2);
+    end 
+    acceptance_ratio_temp
+    liste_nrj_tot_temp
+    
+    % [Fin_mat_1, Sigma_mat_1, h_mat_1, p_mat_1, Slope_mat_1, Intercept_mat_1] = Val_Trace(CF_Trace_Plot, 100);
+    % CrossFeed_Mat_Temp(h_mat_1 == 0) = Fin_mat_1(h_mat_1 == 0);
+    % [Fin_mat, Sigma_mat, h_mat, p_mat, Slope_mat, Intercept_mat] = Val_Trace(Res_Trace_Plot, 100);
+    % Resource_Matrix(h_mat == 0) = Fin_mat(h_mat == 0);
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+    %Data to test on half of the remaining data
+    Time_step = [0 1 3 7 10 21]*24; %Measured time step in hours
+    tspan = [0, max(Time_step)]; %Time interval in hours
+    Data_Evol_temp = table2array(Data_Evol_test(:, 2:end)); %table2array(Data_Evol(:, 2:end));
+    Data_Evol_temp = Data_Evol_temp(:,ismember(mod(1:length(Data_Evol_temp(1,:)), 4), [1, 2, 3]));%20% of the data to test
+    nb_time_step = length(Time_step);
+    nb_obs = length(Data_Evol_temp(1,:));
+    nb_rep = nb_obs/nb_time_step;
+    Measured_Abund = zeros(length(mu_max_vect), nb_time_step, nb_rep); %Number species, number times, number replicates.
+    for i = 1:nb_rep
+        Measured_Abund(:,:,i) = Data_Evol_temp(:, mod(1:nb_obs, nb_rep) == (i - 1));
+    end
+    StackPlot_Meas = Measured_Abund./sum(Measured_Abund);
+    Threshold_Surviving = 1e-10;
+    nb_Surv_Obs = sum(mean(Measured_Abund,3) > Threshold_Surviving);
+    mean_y_0 = mean(Measured_Abund(:,1,:), 3);%table2array(Data_Evol(1:20, 2));
+    mat_y_0 = [mean_y_0 zeros(S,1) zeros(S,1)];
+    mat_y_0 = reshape(mat_y_0', 1, []);
+    mat_y_0 = [mat_y_0 R];
+    
+    sol = ode45(@(t, y) fun_CF_Death(t, y, kappa_mat, CrossFeed_Mat_Temp, Mat_kappa_3, Resource_Matrix, Threshold_CF, Threshold_death, Death_Mat_Temp, death_rate, S, Lag_time_Cons, Lag_time_Pred, nb_Res, Hill_CF_coeff, Hill_Pred_coeff), tspan,  mat_y_0, opts_1); %Multiple resource groups
+    z_temp = deval(sol, Time_step);
+    X = z_temp(mod(1:S*3,3) == 1,:); %Species'biomass
+    P = z_temp(mod(1:S*3,3) == 2,:); %Complexes'biomass
+    X = X + P;
+    
+    CrossFeed_Mat_Temp_rates = CrossFeed_Mat_Temp.*mu_max_vect_temp; Resource_Matrix_rates = Resource_Matrix.*mu_max_vect_temp;
+            
+    %%% Figure generation %%%
+    
+    acceptance_ratio_fin = sum(acceptance_ratio_tot)/(nb_loops*num_steps*max_tot_iter);
+    ratio_fin_abund = sum(X(:,end))/sum(Measured_Abund(:,end));
+    
+    % figure(num_fig) %figure 1 : Simulated absolute abundances
+    for j = 1:S
+        plot(Time_step, X(j,:), '-o', 'Color', colors(j,:));%, Time_step, R_temp, 'o');
+        hold on
+    end
+    axis([0 500 0 3.5e-04])
+    %legend(name, 'Orientation', 'vertical', 'Location', 'southeast')
+    
+    hold on
+    figure(num_fig) %figure 2 : Observed absolute abundances
+    for j = 1:S
+        plot(Time_step, mean(Measured_Abund(j,:,:), 3), '--*', 'Color', colors(j,:));%, Time_step, R_temp, 'o');
+        hold on
+    end
+    axis([0 500 0 3.5e-04])
+    legend(name, 'Orientation', 'vertical', 'Location', 'southeast')
+    
+    num_fig = num_fig + 1; 
+    z_temp = z_temp(1:(end-nb_Res), end);
+    z_temp = reshape(z_temp',3, S);
+    z_temp = z_temp';
+    z = sum(z_temp(:,1:2), 2);%Total biomass of all species after 1 week
+    StackPlot = X./sum(X); %Proportion of each species into the system at the end of the cycle
+    [Shann_sim, Simp_sim] = Shannon_Simpson_Indices(S,StackPlot);
+    [Shann_obs, Simp_obs] = Shannon_Simpson_Indices(S, mean(StackPlot_Meas,3));
+    rand_prop = max(normrnd(1, 0.3, S, 1), 0);
+    mat_y_0 = (z_temp(:,1:2)/10).*rand_prop; %Take the 10% of the system
+    mat_y_0 = [mat_y_0 zeros(S,1)];
+    
+    StackPlotTot = X./sum(X);
+    
+    z_fin_sim = z(1:S,end); %Absolute stationary abundances
+    z_fin_obs = mean(Measured_Abund(1:S, end, :), 3); %Absolute stationary abundances
+    nb_Surv_Sim = sum(StackPlotTot > Threshold_Surviving);
+    sum(z_fin_sim)/sum(z_fin_obs)
+    acceptance_ratio_temp
+    liste_nrj_tot_temp
+    
+    figure(num_fig); 
+    bar(StackPlotTot', 'stacked');
+    axis([0 11.5 0 1])
+    legend(name, 'Orientation', 'vertical', 'Location', 'southeast')
+    title('Stacked all replicates')
+    num_fig = num_fig + 1;
+    
+    figure(num_fig); 
+    bar(mean(StackPlot_Meas,3)', 'stacked');
+    axis([0 11.5 0 1])
+    legend(name, 'Orientation', 'vertical', 'Location', 'southeast')
+    title('Stacked observed')
+    num_fig = num_fig + 1;
+    
+    [diff_vect, I, ~] = Sort_diff(StackPlotTot(:,end),mean(StackPlot_Meas(:,end,:),3));
+    name_order = name(I);
+    figure(num_fig);
+    stem(diff_vect);
+    xtickangle(90)
+    set(gca,'xtick',1:21,'xticklabel',name_order)
+    ylabel('Sim - Obs')
+    
+    num_fig = num_fig + 1;
+    
+    figure(num_fig);
+    for j = 1:S
+        scatter(mean(StackPlot_Meas(j, 2, :), 3), StackPlotTot(j,2), 100, 'd', 'LineWidth', 5, 'MarkerEdgeColor', colors(j,:), 'MarkerFaceColor', colors(S+1-j,:));%col(S+1-j,:))      
+        hold on
+    end
+    axis([0 0.5 0 0.5]);
+    axis square
+    reflin = refline(1,0);
+    reflin.Color = 'r';
+    xlabel('Experiment'); 
+    ylabel('Simulation');
+    legend(name);
+    title('Scatter Tot');
+    
+    num_fig = num_fig + 1;
+    
+    figure(num_fig);
+    for j = 1:S
+        scatter(z_fin_obs(j), z_fin_sim(j), 100, 'd', 'LineWidth', 5, 'MarkerEdgeColor', colors(j,:), 'MarkerFaceColor', colors(S+1-j,:));%col(S+1-j,:))      
+        hold on
+    end
+    axis([0 3*10^(-4) 0 3*10^(-4)]);
+    reflin = refline(1,0);
+    axis square
+    reflin.Color = 'r';
+    xlabel('Experiment'); 
+    ylabel('Simulation');
+    legend(name);
+    title('Scatter absolute abundance');
+    num_fig = num_fig + 1;
+    
+    figure(num_fig);
+    plot(1:length(Time_step), Simp_obs, 'b--o')
+    hold on
+    plot(1:length(Time_step), Simp_sim, 'r--o')
+    num_fig = num_fig + 1;
+    
+    figure(num_fig);
+    plot(1:length(Time_step), nb_Surv_Obs, 'b--o')
+    hold on
+    plot(1:length(Time_step), nb_Surv_Sim, 'r--o')
+    num_fig = num_fig + 1;
+    
+    num_fig = num_fig+1;
+    figure(num_fig);
+    plot(1:length(liste_nrj_tot), liste_nrj_tot)
+
+    data_to_save_Inter_v2(nb_iter_tot).CrossFeed_Mat_Temp = CrossFeed_Mat_Temp;
+    data_to_save_Inter_v2(nb_iter_tot).Threshold_CF = Threshold_CF;
+    data_to_save_Inter_v2(nb_iter_tot).Threshold_death = Threshold_death;
+    data_to_save_Inter_v2(nb_iter_tot).Death_Mat_Temp = Death_Mat_Temp;
+    data_to_save_Inter_v2(nb_iter_tot).Resource_Matrix = Resource_Matrix;
+    data_to_save_Inter_v2(nb_iter_tot).Lag_time_Pred = Lag_time_Pred;
+    data_to_save_Inter_v2(nb_iter_tot).Lag_time_Cons = Lag_time_Cons;
+    data_to_save_Inter_v2(nb_iter_tot).Mat_kappa_3 = Mat_kappa_3;
+    data_to_save_Inter_v2(nb_iter_tot).kappa_mat = kappa_mat;
+    data_to_save_Inter_v2(nb_iter_tot).R = R;
+    data_to_save_Inter_v2(nb_iter_tot).CrossFeed_Mat_init = CrossFeed_Mat_init;
+    data_to_save_Inter_v2(nb_iter_tot).Threshold_CF_init = Threshold_CF_init;
+    data_to_save_Inter_v2(nb_iter_tot).Threshold_death_init = Threshold_death_init;
+    data_to_save_Inter_v2(nb_iter_tot).Death_Mat_init = Death_Mat_init;
+    data_to_save_Inter_v2(nb_iter_tot).Resource_Matrix_init = Resource_Matrix_init;
+    data_to_save_Inter_v2(nb_iter_tot).Lag_time_Pred_init = Lag_time_Pred_init;
+    data_to_save_Inter_v2(nb_iter_tot).Lag_time_Cons_init = Lag_time_Cons_init;
+    data_to_save_Inter_v2(nb_iter_tot).Mat_kappa_3_init = Mat_kappa_3_init;
+    data_to_save_Inter_v2(nb_iter_tot).kappa_mat_init = kappa_mat_init;
+    data_to_save_Inter_v2(nb_iter_tot).R_init = R_init;
+    data_to_save_Inter_v2(nb_iter_tot).Struct_Res_Mat = Struct_Res_Mat;
+    data_to_save_Inter_v2(nb_iter_tot).Struct_Death_Mat = Struct_Death_Mat;
+    data_to_save_Inter_v2(nb_iter_tot).Struct_CrossFeed_Mat = Struct_CrossFeed_Mat;
+    data_to_save_Inter_v2(nb_iter_tot).Cov_Mat_CF = Cov_Mat_CF;
+    data_to_save_Inter_v2(nb_iter_tot).Cov_Mat_Death = Cov_Mat_Death;
+    data_to_save_Inter_v2(nb_iter_tot).Cov_Mat_Res = Cov_Mat_Res;
+    data_to_save_Inter_v2(nb_iter_tot).Cov_Mat_LT = Cov_Mat_LT;
+    data_to_save_Inter_v2(nb_iter_tot).death_rate = death_rate;
+end
+
+save(strcat(cd, '/Data/', 'data_to_save_Inter_v2'), 'data_to_save_Inter_v2')

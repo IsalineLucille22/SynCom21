@@ -1,0 +1,30 @@
+# Heavy folders
+Data/
+Figures/
+Results/
+
+# Heavy files
+*.mat
+*.asv
+*.xlsx
+*.csv
+
+# R
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rcheck/
+.Renviron
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+.env
+
+# macOS
+.DS_Store
+

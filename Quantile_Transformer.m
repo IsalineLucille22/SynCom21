@@ -1,0 +1,19 @@
+function Transformed_Data = Quantile_Transformer(Sim, Obs, std_weight)
+    infReplacement = 2*max(max(max(Obs)));
+    [m, p, n] = size(Obs);
+    std_weight = std_weight.*ones(m,p,n); %std_weight
+    std_weight = reshape(std_weight, 1, []);
+    errors = (Sim - Obs);
+    errors = reshape(errors, 1, []);
+    tot_mean = mean(errors);
+    tot_std = std(errors).*std_weight;
+    errors = (Sim - Obs);
+    errors = reshape(errors, 1, []);
+    [f, x] = ecdf(errors);
+    [x, uniqueIdx] = unique(x);
+    f = f(uniqueIdx);
+    uniformQuantiles = interp1(x, f, errors, 'linear', 'extrap');
+    transformedErrors = norminv(uniformQuantiles, tot_mean, tot_std);%norminv(uniformQuantiles, mean(errors), std(errors));
+    transformedErrors(isinf(transformedErrors)) = sign(transformedErrors(isinf(transformedErrors)))*infReplacement;
+    Transformed_Data = reshape(transformedErrors, m, p, n);
+end
