@@ -16,8 +16,8 @@ addpath('/Users/pret_helpdesk/Library/CloudStorage/OneDrive-UniversitédeLausann
 addpath('/Users/pret_helpdesk/Library/CloudStorage/OneDrive-UniversitédeLausanne/CoCulture_Soil')
 
 
-name_Exp = 'Bruna_21_CF_Reduce_Res_Init_Senka';
-Name_file = 'struct_tot_SynCom21_Soil_only_Lyso_Parfor';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv4';%'struct_tot_SynCom21_Soil_only_Lyso_Parfor';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv3';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_New';%'data_Reduced_dim';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv2';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_New';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_New';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Random';%'data_to_save_Inter_v2';%'data_no_CF.mat';
+name_Exp = 'Subcommunity_wo_Muci';
+Name_file = 'struct_tot_SynCom21_Soil_only_Lyso_Parfor';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv5';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv4';%'struct_tot_SynCom21_Soil_only_Lyso_Parfor';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv3';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_New';%'data_Reduced_dim';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv2';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_New';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_New';%'data_to_save_SynCom21_Soil_only_Lyso_Parfor_Random';%'data_to_save_Inter_v2';%'data_no_CF.mat';
 Name_file_Resources_Death = 'data_to_save_SynCom21_Reduced'; %Data fitted on moncultures
 
 %Loadind data
@@ -28,17 +28,19 @@ Parameters_Senka_mu_max = readtable(strcat('Data/','MergedData.xlsx'), 'Sheet', 
 
 % Data_Evol = readtable(strcat('/Users/iguex/Library/CloudStorage/OneDrive-UniversitédeLausanne/CoCulture_Soil/Data/Liquid_Data/','abund_cfu_IG.xlsx'), 'Sheet', 2, 'Range','46:67', 'Format','auto');%1:22 without correction for 0. Data in soil extract from Phil and Clara's experiments
 % Data_Evol = readtable(strcat('Data/','S20_S21_abs_abund_cfu_Senka.xlsx'), 'Sheet', 7, 'Range','1:22', 'Format','auto'); %Senka's data
-Data_Evol = readtable(strcat('Data/','SSC21_genera_relative-abundances.xlsx'), 'Sheet', 4, 'Range','1:22', 'Format','auto'); %Bruna's data
+% Data_Evol = readtable(strcat('Data/','SSC21_genera_relative-abundances.xlsx'), 'Sheet', 4, 'Range','1:22', 'Format','auto'); %Bruna's data
+Data_Evol = readtable(strcat('Data/','SynComNX_data_SenkaCB_IG.xlsx'), 'Sheet', 2, 'Range','57:78', 'Format','auto'); %Subcommunities.
 mu_max_dist = table2array(Parameters_Senka_mu_max(:,7:8));
 S = height(Data_Evol);
-Time_step = [0 12 22 38 70 168 504];%Bruna %[0 1 3 7 10 21]*24;%Senka %[0 12 48 96 7*24 21*24];%Clara %Measured time step in hours
+Time_step = [0 24 72 168];%[0 12 22 38 70 168 504];%Bruna %[0 1 3 7 10 21]*24;%Senka %[0 12 48 96 7*24 21*24];%Clara %Measured time step in hours
 nb_res = 12;
 
 %Load parameters
 load(strcat('Data/', Name_file));
-data_to_save = struct_tot_SynCom21_Soil_only_Lyso_Parfor;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv4;%struct_tot_SynCom21_Soil_only_Lyso_Parfor;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv3;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_New;%data_Reduced_dim; %data_to_save_SynCom21_Soil_only_Lyso_Parfor_New;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_New;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_7;%data_to_save_Inter_v2;%data_no_CF;
+data_to_save = struct_tot_SynCom21_Soil_only_Lyso_Parfor;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv5;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv4;%struct_tot_SynCom21_Soil_only_Lyso_Parfor;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_Newv3;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_New;%data_Reduced_dim; %data_to_save_SynCom21_Soil_only_Lyso_Parfor_New;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_New;%data_to_save_SynCom21_Soil_only_Lyso_Parfor_7;%data_to_save_Inter_v2;%data_no_CF;
 load(strcat('Data/', Name_file_Resources_Death));
 data_to_save_Res_Death = data_to_save_Mono;
+out_struct = Weighted_Struct(data_to_save);
 
 % Fitted parameters
 StackPlotTot = zeros(S, length(Time_step));
@@ -81,7 +83,7 @@ for i = 1:nb_rep
         hold on
     end
 end
-axis([0 600 0 4e-04])
+axis([0 max(Time_step) 0 4e-04])
 num_fig = num_fig + 1;
 rand = unifrnd(0,1);
 mean_y_0 = mean(Measured_Abund(:,1,:), 3);
@@ -92,29 +94,44 @@ Measured_Abund_average = mean(Measured_Abund,3);
 opts_1 = odeset('RelTol',1e-9,'AbsTol',1e-12);%,'NonNegative',1:nb_tot_Species); %To smooth the curves obtained using ode45.
 nb_data_set = size(data_to_save,2);
 [Shann_sim, Simp_sim, Shann_obs, Simp_obs] = deal(zeros(nb_data_set, nb_time_step));
-for zz = 1:nb_data_set
+for zz = 1:nb_rep %nb_data_set
+
+    out_struct = Weighted_Struct(data_to_save);
 
     ind_sim = zz; 
-    kappa_mat = data_to_save(ind_sim).kappa_mat;
-    CrossFeed_Mat = data_to_save(ind_sim).CrossFeed_Mat_Temp;
-    Death_Mat_Temp = data_to_save(ind_sim).Death_Mat_Temp; %data_to_save_Res_Death.Death_Mat_Temp; %data_to_save(ind_sim).Death_Mat_Temp; 
-    Threshold_CF = data_to_save(ind_sim).Threshold_CF;
-    Threshold_death = data_to_save(ind_sim).Threshold_death; 
-    Lag_time_Cons = data_to_save(ind_sim).Lag_time_Cons; %data_to_save_Res_Death.Lag_time_Cons; %data_to_save(ind_sim).Lag_time_Cons; 
-    % Lag_time_Cons_Pseudo = data_to_save_Res_Death.Lag_time_Cons;
-    % Lag_time_Cons_Pseudo(20:21,:) = Lag_time_Cons(20:21,:);
-    Lag_time_Pred = data_to_save(ind_sim).Lag_time_Pred;
-    Mat_kappa_3 = kappa_mat(:,3).*CrossFeed_Mat./kappa_mat(:,2);
+    % kappa_mat = data_to_save(ind_sim).kappa_mat;
+    % CrossFeed_Mat = data_to_save(ind_sim).CrossFeed_Mat_Temp;
+    % Death_Mat_Temp = data_to_save(ind_sim).Death_Mat_Temp; %data_to_save_Res_Death.Death_Mat_Temp; %data_to_save(ind_sim).Death_Mat_Temp; 
+    % Threshold_CF = data_to_save(ind_sim).Threshold_CF;
+    % Threshold_death = data_to_save(ind_sim).Threshold_death; 
+    % Lag_time_Cons = data_to_save(ind_sim).Lag_time_Cons; %data_to_save_Res_Death.Lag_time_Cons; %data_to_save(ind_sim).Lag_time_Cons; 
+    % % Lag_time_Cons_Pseudo = data_to_save_Res_Death.Lag_time_Cons;
+    % % Lag_time_Cons_Pseudo(20:21,:) = Lag_time_Cons(20:21,:);
+    % Lag_time_Pred = data_to_save(ind_sim).Lag_time_Pred;
+    % Mat_kappa_3 = kappa_mat(:,3).*CrossFeed_Mat./kappa_mat(:,2);
     death_rate =  data_to_save(ind_sim).death_rate;
+    % name = string(table2array(Parameters_set(1:21,1)));
+    % Pred_Mat_Lyso = data_to_save(ind_sim).Pred_Mat_Lyso;
+    % Threshold_Pred = data_to_save(ind_sim).Threshold_Pred;
+    % R = 0.4*data_to_save(ind_sim).R; %0.4 subcommunities wo Lysobacter or Mucilaginibacter. 0.5 wo Pseudomonas1. Reduce 1.25 + init Senka. 1.5 just reduce
+    % nb_Res = length(R); %Number of resources (group of resources)
+    % Resource_Matrix = data_to_save(ind_sim).Resource_Matrix; %data_to_save_Res_Death.Resource_Matrix; %data_to_save(ind_sim).Resource_Matrix; %Addition of a line for Lysobacter
+    % % Resource_Matrix(21,:) = 0; %Assuming Pseudomonas2 can't consume the initial resources of soil 
+    
+    kappa_mat = out_struct.kappa_mat;
+    CrossFeed_Mat = out_struct.CrossFeed_Mat_Temp;
+    Death_Mat_Temp = out_struct.Death_Mat_Temp; %data_to_save_Res_Death.Death_Mat_Temp; %data_to_save(ind_sim).Death_Mat_Temp; 
+    Threshold_CF = out_struct.Threshold_CF;
+    Threshold_death = out_struct.Threshold_death; 
+    Lag_time_Cons = out_struct.Lag_time_Cons; %data_to_save_Res_Death.Lag_time_Cons; %data_to_save(ind_sim).Lag_time_Cons; 
+    Lag_time_Pred = out_struct.Lag_time_Pred;
+    Mat_kappa_3 = kappa_mat(:,3).*CrossFeed_Mat./kappa_mat(:,2);
     name = string(table2array(Parameters_set(1:21,1)));
-    Pred_Mat_Lyso = data_to_save(ind_sim).Pred_Mat_Lyso;
-    Threshold_Pred = data_to_save(ind_sim).Threshold_Pred;
-    R = data_to_save(ind_sim).R/1.5; %Reduce 1.25 + init Senka. 1.5 just reduce
+    Pred_Mat_Lyso = out_struct.Pred_Mat_Lyso;
+    Threshold_Pred = out_struct.Threshold_Pred;
+    R = 0.4*out_struct.R; %0.4 subcommunities wo Lysobacter or Mucilaginibacter. 0.5 wo Pseudomonas1. Reduce 1.25 + init Senka. 1.5 just reduce
     nb_Res = length(R); %Number of resources (group of resources)
     Resource_Matrix = data_to_save(ind_sim).Resource_Matrix; %data_to_save_Res_Death.Resource_Matrix; %data_to_save(ind_sim).Resource_Matrix; %Addition of a line for Lysobacter
-    % Resource_Matrix_Pseudo = data_to_save_Res_Death.Resource_Matrix; %data_to_save(ind_sim).Resource_Matrix; %Addition of a line for Lysobacter
-    % Resource_Matrix(20:21,:) = Resource_Matrix_Pseudo(20:21,:);
-    
     
     % Measured_Abund = table2array(Data_Evol(1:20, 2:7));
     % Number of surviving species after 8 weeks
@@ -159,7 +176,7 @@ for zz = 1:nb_data_set
                 hold on
             end
             legend(name, 'Orientation', 'vertical', 'Location', 'southeast')
-            axis([0 600 0 4e-04]) %axis([0 600 0 2e-03])
+            axis([0 max(Time_step) 0 4e-04]) %axis([0 600 0 2e-03])
             num_fig = num_fig + 1;
             figure(num_fig)
             Measured_Abund_disp = Measured_Abund_average + normrnd(zeros(S, length(Time_step)), sqrt(var_mat));
@@ -168,7 +185,7 @@ for zz = 1:nb_data_set
                 hold on
             end
             legend(name, 'Orientation', 'vertical', 'Location', 'southeast')
-            axis([0 600 0 4e-04])
+            axis([0 max(Time_step) 0 4e-04])
     
             num_fig = num_fig + 1;
             z_temp = z_temp(1:(end-nb_Res), end);
@@ -210,7 +227,7 @@ p_vect = zeros(1,S);
 for i = 1:S
     [h_vect(i),p_vect(i)] = ttest2(StackPlot_Meas_added_errors(i,:)', StackPlotTot(i,:)');
 end
-name_diff = name(logical(h_vect));
+% name_diff = name(logical(h_vect));
 
 figure(num_fig);
 bar(StackPlotTot', 'stacked');
@@ -411,7 +428,7 @@ for i = 1:S
     
     set(gca,'YScale','log');
     ylim([0 5e-4]);
-    xlim([0 500]);
+    xlim([0 max(Time_step)]);
     yticklabels({}); %turn off the ytick labels, but they go from 1e-8 to 1e-4
     grid on
     bact_name = name(i);
